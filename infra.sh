@@ -160,36 +160,107 @@ aws ec2 associate-route-table \
 
 echo "Route Table privada configurada"
 
-echo "Criando Security Group..."
+echo "Criando Security Group pública..."
 
-SG_ID=$(aws ec2 create-security-group \
-  --group-name bastion-sg \
+SG_PUBLIC_ID=$(aws ec2 create-security-group \
+  --group-name public-sg \
   --description "Bastion SG" \
   --vpc-id $VPC_ID \
   --region $REGION \
   --query 'GroupId' \
   --output text)
 
-aws ec2 create-tags --resources $SG_ID --tags Key=Name,Value=Bastion-SG --region $REGION
+aws ec2 create-tags --resources $SG_PUBLIC_ID --tags Key=Name,Value=Bastion-SG --region $REGION
 
 aws ec2 authorize-security-group-ingress \
-  --group-id $SG_ID \
-  --protocol tcp \
-  --port 22 \
-  --cidr 0.0.0.0/0 \
-  --region $REGION >/dev/null
+  echo "Criando as regras de entrada no grupo de segurança..."
+  aws ec2 authorize-security-group-ingress \
+      --group-id $SG_PUBLIC_ID \
+      --protocol tcp \
+      --port 80 \
+      --cidr 0.0.0.0/0
 
-echo "Security Group criado"
+  aws ec2 authorize-security-group-ingress \
+      --group-id $SG_PUBLIC_ID \
+      --protocol tcp \
+      --port 443 \
+      --cidr 0.0.0.0/0
+
+  aws ec2 authorize-security-group-ingress \
+    --group-id $SG_PUBLIC_ID \
+    --protocol tcp \
+    --port 22 \
+    --cidr 0.0.0.0/0
+
+echo "Security Group púbico criado"
+
+# security group para a instância de backend
+echo "Criando Security group privada para BackEnd..."
+SG_BACKEND_ID=$(aws ec2 create-security-group \
+  --group-name private-backend-sg \
+  --description "private-backend-SG" \
+  --vpc-id $VPC_ID \
+  --region $REGION \
+  --query 'GroupId' \
+  --output text)
+
+aws ec2 create-tags --resources $SG_BACKEND_ID --tags Key=Name,Value=private-backend-SG --region $REGION
+
+aws ec2 authorize-security-group-ingress \
+echo "Criando as regras de entrada no grupo de segurança..."
+
+  aws ec2 authorize-security-group-ingress \
+      --group-id $SG_BACKEND_ID \
+      --protocol tcp \
+      --port 80 \
+      --cidr $PRIVATE_SUBNET_CIDR
+
+  aws ec2 authorize-security-group-ingress \
+      --group-id $SG_BACKEND_ID \
+      --protocol tcp \
+      --port 8080 \
+      --cidr $PRIVATE_SUBNET_CIDR
+  
+  aws ec2 authorize-security-group-ingress \
+      --group-id $SG_BACKEND_ID \
+      --protocol tcp \
+      --port 22 \
+      --cidr $PRIVATE_SUBNET_CIDR
+
+# security group para instância de BD
+SG_DATABASE_ID=$(aws ec2 create-security-group \
+  --group-name private-database-sg \
+  --description "private-database-SG" \
+  --vpc-id $VPC_ID \
+  --region $REGION \
+  --query 'GroupId' \
+  --output text)
+
+aws ec2 create-tags --resources $SG_DATABASE_ID --tags Key=Name,Value=private-database-SG --region $REGION
+
+aws ec2 authorize-security-group-ingress \
+echo "Criando as regras de entrada no grupo de segurança..."
+
+  aws ec2 authorize-security-group-ingress \
+      --group-id $SG_DATABASE_ID \
+      --protocol tcp \
+      --port 3306 \
+      --cidr $PRIVATE_SUBNET_CIDR
+  
+  aws ec2 authorize-security-group-ingress \
+      --group-id $SG_DATABASE_ID \
+      --protocol tcp \
+      --port 22 \
+      --cidr $PRIVATE_SUBNET_CIDR
 
 echo "Subindo Bastion Host..."
-
 BASTION_ID=$(aws ec2 run-instances \
   --image-id $AMI_ID \
   --count 1 \
   --instance-type $INSTANCE_TYPE \
   --key-name $KEY_NAME \
   --subnet-id $PUBLIC_SUBNET_ID \
-  --security-group-ids $SG_ID \
+  --security-group-ids $SG_PUBLIC_ID \
   --associate-public-ip-address \
   --region $REGION \
   --query 'Instances[0].InstanceId' \
@@ -204,24 +275,40 @@ echo "Bastion Host criado: $BASTION_ID"
 
 echo "Subindo 2 instâncias privadas..."
 
-PRIVATE_IDS=$(aws ec2 run-instances \
+# subindo instância de backend
+echo "Subindo instância do BackEnd"
+BACKEND_ID=$(aws ec2 run-instances \
   --image-id $AMI_ID \
-  --count 2 \
+  --count 1 \
   --instance-type $INSTANCE_TYPE \
   --key-name $KEY_NAME \
   --subnet-id $PRIVATE_SUBNET_ID \
-  --security-group-ids $SG_ID \
+  --security-group-ids $SG_BACKEND_ID \
   --region $REGION \
   --query 'Instances[*].InstanceId' \
   --output text)
 
-for ID in $PRIVATE_IDS
-do
-  aws ec2 create-tags \
-    --resources $ID \
-    --tags Key=Name,Value=EC2-Privada-$ID \
+aws ec2 create-tags \
+    --resources $BACKEND_ID \
+    --tags Key=Name,Value=EC2-BackEnd-$BACKEND_ID \
     --region $REGION
-done
+
+# subindo instância do banco de dados
+DATABASE_ID=$(aws ec2 run-instances \
+  --image-id $AMI_ID \
+  --count 1 \
+  --instance-type $INSTANCE_TYPE \
+  --key-name $KEY_NAME \
+  --subnet-id $PRIVATE_SUBNET_ID \
+  --security-group-ids $SG_DATABASE_ID \
+  --region $REGION \
+  --query 'Instances[*].InstanceId' \
+  --output text)
+
+aws ec2 create-tags \
+  --resources $DATABASE_ID \
+  --tags Key=Name,Value=EC2-Database-$DATABASE_ID \
+  --region $REGION
 
 echo "Instâncias privadas criadas"
 
