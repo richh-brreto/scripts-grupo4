@@ -206,8 +206,9 @@ SG_BACKEND_ID=$(aws ec2 create-security-group \
 
 aws ec2 create-tags --resources $SG_BACKEND_ID --tags Key=Name,Value=private-backend-SG --region $REGION
 
-aws ec2 authorize-security-group-ingress \
 echo "Criando as regras de entrada no grupo de segurança..."
+
+aws ec2 authorize-security-group-ingress \
 
   aws ec2 authorize-security-group-ingress \
       --group-id $SG_BACKEND_ID \
@@ -238,8 +239,9 @@ SG_DATABASE_ID=$(aws ec2 create-security-group \
 
 aws ec2 create-tags --resources $SG_DATABASE_ID --tags Key=Name,Value=private-database-SG --region $REGION
 
-aws ec2 authorize-security-group-ingress \
 echo "Criando as regras de entrada no grupo de segurança..."
+
+aws ec2 authorize-security-group-ingress \
 
   aws ec2 authorize-security-group-ingress \
       --group-id $SG_DATABASE_ID \
