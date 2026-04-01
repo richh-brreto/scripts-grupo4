@@ -172,9 +172,8 @@ SG_PUBLIC_ID=$(aws ec2 create-security-group \
 
 aws ec2 create-tags --resources $SG_PUBLIC_ID --tags Key=Name,Value=Bastion-SG --region $REGION
 
+echo "Criando as regras de entrada no grupo de segurança..."
 aws ec2 authorize-security-group-ingress \
-  echo "Criando as regras de entrada no grupo de segurança..."
-  aws ec2 authorize-security-group-ingress \
       --group-id $SG_PUBLIC_ID \
       --protocol tcp \
       --port 80 \
@@ -206,9 +205,7 @@ SG_BACKEND_ID=$(aws ec2 create-security-group \
 
 aws ec2 create-tags --resources $SG_BACKEND_ID --tags Key=Name,Value=private-backend-SG --region $REGION
 
-aws ec2 authorize-security-group-ingress \
 echo "Criando as regras de entrada no grupo de segurança..."
-
   aws ec2 authorize-security-group-ingress \
       --group-id $SG_BACKEND_ID \
       --protocol tcp \
@@ -237,9 +234,6 @@ SG_DATABASE_ID=$(aws ec2 create-security-group \
   --output text)
 
 aws ec2 create-tags --resources $SG_DATABASE_ID --tags Key=Name,Value=private-database-SG --region $REGION
-
-aws ec2 authorize-security-group-ingress \
-echo "Criando as regras de entrada no grupo de segurança..."
 
   aws ec2 authorize-security-group-ingress \
       --group-id $SG_DATABASE_ID \
@@ -311,6 +305,70 @@ aws ec2 create-tags \
   --region $REGION
 
 echo "Instâncias privadas criadas"
+
+# 3 EBS para backup
+echo "Criando volumes de backup"
+for i in {1..3}; do
+  VOLUME="Backup-$i"
+  
+  # verifica se volume existe
+  VOLUME_ID=$(aws ec2 describe-volumes \
+    --filters "Name=tag:Name,Values=Backup-1" \
+    --query 'Volumes[0].VolumeId' \
+    --output text)
+
+  # se nao retornar nada, cria os volumes
+  if [ "$EBS" == "None" ] || [ -z "$EBS" ]; then
+    echo "Volume $VOLUME não encontrado. Criando..."
+    EBS=$(aws ec2 create-volume \
+      --volume-type gp3 \
+      --size 10 \
+      --availability-zone ${REGION}a \
+      --query 'VolumeId' \
+      --encrypted \
+      --output text)
+
+    aws ec2 create-tags \
+      --resources $EBS \
+      --tags Key=Name,Value=$VOLUME
+      else
+    echo "Volume $VOLUME já existe (ID: $EBS)."
+  fi
+done
+
+echo "Alocando um volume á instância de banco de dados..."
+aws ec2 attach-volume \
+    --volume-id $VOLUME_ID \
+    --instance-id $DATABASE_ID \
+    --device /dev/sdf
+
+# espera reconhecer o volume alocado
+aws ec2 wait volume-in-use --volume-ids $EBS
+
+aws ssm send-command \
+    --instance-ids "$DATABASE_ID" \
+    --document-name "mount-volume" \
+    --parameters '{
+        "commands": [
+            "DISK_NAME=$(lsblk -np | grep -v \"part\" | tail -n1 | awk \"{print \$1}\")",
+
+            # Cria sistema de arquivos XFS apenas se o disco estiver vazio",
+            "if ! blkid $DISK_NAME; then
+                sudo mkfs -t xfs $DISK_NAME
+             fi",
+
+            "sudo mkdir -p '/mnt/backup'",
+            "sudo mount $DISK_NAME '/mnt/backup'",
+
+            "# Configura fstab para persistência (evita duplicatas)",
+            "UUID=$(sudo blkid -s UUID -o value $DISK_NAME)",
+            "if ! grep -q $UUID /etc/fstab; then
+                echo \"UUID=$UUID '/mnt/backup' xfs defaults,nofail 0 2\" | sudo tee -a /etc/fstab
+             fi",
+         
+            "sudo chown -R ubuntu:ubuntu '/mnt/backup'"
+        ]
+    }'
 
 echo ""
 echo "==============================="
