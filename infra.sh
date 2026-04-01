@@ -210,19 +210,19 @@ echo "Criando as regras de entrada no grupo de segurança..."
       --group-id $SG_BACKEND_ID \
       --protocol tcp \
       --port 80 \
-      --cidr $PRIVATE_SUBNET_CIDR
+      --source-group $SG_PUBLIC_ID
 
   aws ec2 authorize-security-group-ingress \
       --group-id $SG_BACKEND_ID \
       --protocol tcp \
       --port 8080 \
-      --cidr $PRIVATE_SUBNET_CIDR
-  
+      --source-group $SG_PUBLIC_ID
+
   aws ec2 authorize-security-group-ingress \
       --group-id $SG_BACKEND_ID \
       --protocol tcp \
       --port 22 \
-      --cidr $PRIVATE_SUBNET_CIDR
+      --source-group $SG_PUBLIC_ID
 
 # security group para instância de BD
 SG_DATABASE_ID=$(aws ec2 create-security-group \
@@ -239,13 +239,13 @@ aws ec2 create-tags --resources $SG_DATABASE_ID --tags Key=Name,Value=private-da
       --group-id $SG_DATABASE_ID \
       --protocol tcp \
       --port 3306 \
-      --cidr $PRIVATE_SUBNET_CIDR
+      --source-group $SG_BACKEND_ID
   
   aws ec2 authorize-security-group-ingress \
       --group-id $SG_DATABASE_ID \
       --protocol tcp \
       --port 22 \
-      --cidr $PRIVATE_SUBNET_CIDR
+      --source-group $SG_BACKEND_ID
 
 echo "Subindo Bastion Host..."
 BASTION_ID=$(aws ec2 run-instances \
