@@ -206,17 +206,18 @@ SG_BACKEND_ID=$(aws ec2 create-security-group \
 aws ec2 create-tags --resources $SG_BACKEND_ID --tags Key=Name,Value=private-backend-SG --region $REGION
 
 echo "Criando as regras de entrada no grupo de segurança..."
+
   aws ec2 authorize-security-group-ingress \
       --group-id $SG_BACKEND_ID \
       --protocol tcp \
       --port 80 \
-      --source-group $SG_PUBLIC_ID
+      --source-group $SG_PUBLIC_ID >/dev/null
 
   aws ec2 authorize-security-group-ingress \
       --group-id $SG_BACKEND_ID \
       --protocol tcp \
       --port 8080 \
-      --source-group $SG_PUBLIC_ID
+      --source-group $SG_PUBLIC_ID >/dev/null
 
   aws ec2 authorize-security-group-ingress \
       --group-id $SG_BACKEND_ID \
@@ -247,6 +248,9 @@ aws ec2 create-tags --resources $SG_DATABASE_ID --tags Key=Name,Value=private-da
       --port 22 \
       --source-group $SG_BACKEND_ID
 
+
+
+
 echo "Subindo Bastion Host..."
 BASTION_ID=$(aws ec2 run-instances \
   --image-id $AMI_ID \
@@ -262,12 +266,33 @@ BASTION_ID=$(aws ec2 run-instances \
 
 aws ec2 create-tags \
   --resources $BASTION_ID \
-  --tags Key=Name,Value=EC2-Publica-$BASTION_ID \
+  --tags Key=Name,Value=EC2-Publica \
   --region $REGION
 
 echo "Bastion Host criado: $BASTION_ID"
 
-echo "Subindo 2 instâncias privadas..."
+echo "Subindo 3 instâncias privadas..."
+
+
+# Subindo instẫncia de Frontend
+echo "Subindo instância do Frontend"
+
+FRONTEND_ID=$(aws ec2 run-instances \
+  --image-id $AMI_ID \
+  --count 1 \
+  --instance-type $INSTANCE_TYPE \
+  --key-name $KEY_NAME \
+  --subnet-id $PRIVATE_SUBNET_ID \
+  --security-group-ids $SG_BACKEND_ID \
+  --region $REGION \
+  --private-ip-address '10.0.2.100'\
+  --query 'Instances[*].InstanceId' \
+  --output text)
+
+aws ec2 create-tags \
+    --resources $FRONTEND_ID \
+    --tags Key=Name,Value=EC2-Frontend \
+    --region $REGION
 
 # subindo instância de backend
 echo "Subindo instância do BackEnd"
@@ -279,13 +304,15 @@ BACKEND_ID=$(aws ec2 run-instances \
   --subnet-id $PRIVATE_SUBNET_ID \
   --security-group-ids $SG_BACKEND_ID \
   --region $REGION \
+  --private-ip-address '10.0.2.200'\
   --query 'Instances[*].InstanceId' \
   --output text)
 
 aws ec2 create-tags \
     --resources $BACKEND_ID \
-    --tags Key=Name,Value=EC2-BackEnd-$BACKEND_ID \
+    --tags Key=Name,Value=EC2-BackEnd \
     --region $REGION
+
 
 # subindo instância do banco de dados
 DATABASE_ID=$(aws ec2 run-instances \
@@ -296,13 +323,21 @@ DATABASE_ID=$(aws ec2 run-instances \
   --subnet-id $PRIVATE_SUBNET_ID \
   --security-group-ids $SG_DATABASE_ID \
   --region $REGION \
+  --private-ip-address '10.0.2.80'\
   --query 'Instances[*].InstanceId' \
   --output text)
 
 aws ec2 create-tags \
   --resources $DATABASE_ID \
-  --tags Key=Name,Value=EC2-Database-$DATABASE_ID \
+  --tags Key=Name,Value=EC2-Database \
   --region $REGION
+
+
+
+
+
+
+
 
 echo "Instâncias privadas criadas"
 
@@ -350,6 +385,6 @@ echo ""
 echo "==============================="
 echo "Infra criada com sucesso"
 echo "1 EC2 Bastion Host (public)"
-echo "2 EC2 (private)"
+echo "3 EC2 (private)"
 echo "NAT Gateway + VPC + Subnets"
 echo "==============================="
