@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 REGION="us-east-1"
 
@@ -7,7 +8,7 @@ echo " Limpando infraestrutura AWS (mantendo KeyPairs)"
 echo " Região: $REGION"
 echo "========================================="
 
-# 1️⃣ Terminar instâncias
+# 1️⃣ EC2
 echo "🔹 Terminando instâncias EC2..."
 
 INST_IDS=$(aws ec2 describe-instances \
@@ -31,7 +32,92 @@ else
 fi
 
 
-# 2️⃣ Deletar NAT Gateway
+# 2️⃣ ALB
+echo "🔹 Deletando Load Balancers..."
+
+LBS=$(aws elbv2 describe-load-balancers \
+--query 'LoadBalancers[*].LoadBalancerArn' \
+--output text \
+--region $REGION)
+
+for lb in $LBS
+do
+  aws elbv2 delete-load-balancer \
+  --load-balancer-arn $lb \
+  --region $REGION >/dev/null
+done
+
+sleep 10
+
+
+# 3️⃣ TARGET GROUPS
+echo "🔹 Deletando Target Groups..."
+
+TGS=$(aws elbv2 describe-target-groups \
+--query 'TargetGroups[*].TargetGroupArn' \
+--output text \
+--region $REGION)
+
+for tg in $TGS
+do
+  aws elbv2 delete-target-group \
+  --target-group-arn $tg \
+  --region $REGION >/dev/null 2>&1
+done
+
+
+# 4️⃣ EFS (CORRIGIDO)
+echo "🔹 Deletando EFS..."
+
+FILESYSTEMS=$(aws efs describe-file-systems \
+--query 'FileSystems[*].FileSystemId' \
+--output text \
+--region $REGION)
+
+for fs in $FILESYSTEMS
+do
+  echo "Processando EFS: $fs"
+
+  MOUNTS=$(aws efs describe-mount-targets \
+  --file-system-id $fs \
+  --query 'MountTargets[*].MountTargetId' \
+  --output text \
+  --region $REGION)
+
+  for mt in $MOUNTS
+  do
+    echo "Deletando mount target: $mt"
+    aws efs delete-mount-target \
+    --mount-target-id $mt \
+    --region $REGION >/dev/null
+  done
+
+  echo "Aguardando mount targets sumirem..."
+
+  while true
+  do
+    CHECK=$(aws efs describe-mount-targets \
+    --file-system-id $fs \
+    --query 'MountTargets' \
+    --output text \
+    --region $REGION)
+
+    if [ -z "$CHECK" ]; then
+      break
+    fi
+
+    sleep 5
+  done
+
+  echo "Deletando EFS: $fs"
+
+  aws efs delete-file-system \
+  --file-system-id $fs \
+  --region $REGION >/dev/null
+done
+
+
+# 5️⃣ NAT
 echo "🔹 Deletando NAT Gateways..."
 
 NAT_IDS=$(aws ec2 describe-nat-gateways \
@@ -49,14 +135,14 @@ do
 done
 
 if [ -n "$NAT_IDS" ]; then
-  echo "Aguardando NAT Gateway finalizar..."
+  echo "Aguardando NAT Gateways..."
   aws ec2 wait nat-gateway-deleted \
   --nat-gateway-ids $NAT_IDS \
   --region $REGION
 fi
 
 
-# 3️⃣ Liberar Elastic IPs
+# 6️⃣ EIP
 echo "🔹 Liberando Elastic IPs..."
 
 EIPS=$(aws ec2 describe-addresses \
@@ -72,7 +158,7 @@ do
 done
 
 
-# 4️⃣ Security Groups
+# 7️⃣ SG
 echo "🔹 Deletando Security Groups..."
 
 SGS=$(aws ec2 describe-security-groups \
@@ -88,8 +174,8 @@ do
 done
 
 
-# 5️⃣ Route Tables
-echo "🔹 Deletando Route Tables customizadas..."
+# 8️⃣ ROUTE TABLES
+echo "🔹 Deletando Route Tables..."
 
 RTS=$(aws ec2 describe-route-tables \
 --query 'RouteTables[?Associations[0].Main==`false`].RouteTableId' \
@@ -98,7 +184,6 @@ RTS=$(aws ec2 describe-route-tables \
 
 for rt in $RTS
 do
-
   ASSOC=$(aws ec2 describe-route-tables \
   --route-table-ids $rt \
   --query 'RouteTables[0].Associations[*].RouteTableAssociationId' \
@@ -118,7 +203,7 @@ do
 done
 
 
-# 6️⃣ Internet Gateway
+# 9️⃣ IGW
 echo "🔹 Deletando Internet Gateways..."
 
 IGWS=$(aws ec2 describe-internet-gateways \
@@ -128,7 +213,6 @@ IGWS=$(aws ec2 describe-internet-gateways \
 
 for igw in $IGWS
 do
-
   VPC_ID=$(aws ec2 describe-internet-gateways \
   --internet-gateway-ids $igw \
   --query 'InternetGateways[0].Attachments[0].VpcId' \
@@ -148,7 +232,7 @@ do
 done
 
 
-# 7️⃣ Subnets
+# 🔟 SUBNETS
 echo "🔹 Deletando Subnets..."
 
 SUBNETS=$(aws ec2 describe-subnets \
@@ -164,8 +248,8 @@ do
 done
 
 
-# 8️⃣ VPC
-echo "🔹 Deletando VPCs customizadas..."
+# 1️⃣1️⃣ VPC
+echo "🔹 Deletando VPCs..."
 
 VPCS=$(aws ec2 describe-vpcs \
 --query 'Vpcs[?IsDefault==`false`].VpcId' \
@@ -183,5 +267,5 @@ done
 echo ""
 echo "========================================="
 echo " Limpeza concluída"
-echo " Key Pairs foram preservadas"
+echo " Infra 100% removida"
 echo "========================================="

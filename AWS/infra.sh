@@ -1,9 +1,8 @@
 #!/bin/bash
+set -e
 
 # Variáveis
 VPC_CIDR="10.0.0.0/16"
-PUBLIC_SUBNET_CIDR="10.0.1.0/24"
-PRIVATE_SUBNET_CIDR="10.0.2.0/24"
 REGION="us-east-1"
 INSTANCE_TYPE="t2.micro"
 KEY_NAME="key-server"
@@ -17,374 +16,194 @@ AMI_ID=$(aws ec2 describe-images \
   --region $REGION \
   --output text | sort -k2 -r | head -n1 | cut -f1)
 
-echo "AMI selecionada: $AMI_ID"
-
-echo "Verificando Key Pair..."
-
-if ! aws ec2 describe-key-pairs --key-names $KEY_NAME --region $REGION >/dev/null 2>&1; then
-  echo "Criando Key Pair..."
-  aws ec2 create-key-pair \
-    --key-name $KEY_NAME \
-    --query 'KeyMaterial' \
-    --region $REGION \
-    --output text > ${KEY_NAME}.pem
-  chmod 400 ${KEY_NAME}.pem
-else
-  echo "Key Pair já existe"
-fi
-
 echo "Criando VPC..."
-
 VPC_ID=$(aws ec2 create-vpc \
   --cidr-block $VPC_CIDR \
   --region $REGION \
   --query 'Vpc.VpcId' \
   --output text)
 
-aws ec2 create-tags --resources $VPC_ID --tags Key=Name,Value=VPC-LAB --region $REGION
-
-echo "VPC criada: $VPC_ID"
-
 echo "Criando Subnets..."
 
-PUBLIC_SUBNET_ID=$(aws ec2 create-subnet \
-  --vpc-id $VPC_ID \
-  --cidr-block $PUBLIC_SUBNET_CIDR \
-  --availability-zone ${REGION}a \
-  --region $REGION \
-  --query 'Subnet.SubnetId' \
-  --output text)
+PUB_A=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block 10.0.1.0/24 --availability-zone ${REGION}a --region $REGION --query 'Subnet.SubnetId' --output text)
+PUB_B=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block 10.0.5.0/24 --availability-zone ${REGION}b --region $REGION --query 'Subnet.SubnetId' --output text)
 
-aws ec2 create-tags --resources $PUBLIC_SUBNET_ID --tags Key=Name,Value=Public-Subnet --region $REGION
+PRIV_A=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block 10.0.2.0/24 --availability-zone ${REGION}a --region $REGION --query 'Subnet.SubnetId' --output text)
+PRIV_B=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block 10.0.3.0/24 --availability-zone ${REGION}b --region $REGION --query 'Subnet.SubnetId' --output text)
 
-PRIVATE_SUBNET_ID=$(aws ec2 create-subnet \
-  --vpc-id $VPC_ID \
-  --cidr-block $PRIVATE_SUBNET_CIDR \
-  --availability-zone ${REGION}a \
-  --region $REGION \
-  --query 'Subnet.SubnetId' \
-  --output text)
-
-aws ec2 create-tags --resources $PRIVATE_SUBNET_ID --tags Key=Name,Value=Private-Subnet --region $REGION
-
-echo "Subnets criadas"
+DB_SUBNET=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block 10.0.4.0/24 --availability-zone ${REGION}a --region $REGION --query 'Subnet.SubnetId' --output text)
 
 echo "Criando Internet Gateway..."
-
-IGW_ID=$(aws ec2 create-internet-gateway \
-  --region $REGION \
-  --query 'InternetGateway.InternetGatewayId' \
-  --output text)
-
-aws ec2 create-tags --resources $IGW_ID --tags Key=Name,Value=IGW-LAB --region $REGION
-
-aws ec2 attach-internet-gateway \
-  --vpc-id $VPC_ID \
-  --internet-gateway-id $IGW_ID \
-  --region $REGION >/dev/null
-
-echo "Internet Gateway anexado"
+IGW_ID=$(aws ec2 create-internet-gateway --region $REGION --query 'InternetGateway.InternetGatewayId' --output text)
+aws ec2 attach-internet-gateway --vpc-id $VPC_ID --internet-gateway-id $IGW_ID --region $REGION >/dev/null
 
 echo "Configurando Route Table pública..."
+RT_PUBLIC=$(aws ec2 create-route-table --vpc-id $VPC_ID --region $REGION --query 'RouteTable.RouteTableId' --output text)
 
-RT_PUBLIC=$(aws ec2 create-route-table \
-  --vpc-id $VPC_ID \
-  --region $REGION \
-  --query 'RouteTable.RouteTableId' \
-  --output text)
+aws ec2 create-route --route-table-id $RT_PUBLIC --destination-cidr-block 0.0.0.0/0 --gateway-id $IGW_ID --region $REGION >/dev/null
 
-aws ec2 create-tags --resources $RT_PUBLIC --tags Key=Name,Value=Public-RouteTable --region $REGION
-
-aws ec2 create-route \
-  --route-table-id $RT_PUBLIC \
-  --destination-cidr-block 0.0.0.0/0 \
-  --gateway-id $IGW_ID \
-  --region $REGION >/dev/null
-
-aws ec2 associate-route-table \
-  --subnet-id $PUBLIC_SUBNET_ID \
-  --route-table-id $RT_PUBLIC \
-  --region $REGION >/dev/null
-
-echo "Route Table pública configurada"
-
-echo "Criando Elastic IP..."
-
-EIP_ALLOC=$(aws ec2 allocate-address \
-  --domain vpc \
-  --region $REGION \
-  --query 'AllocationId' \
-  --output text)
+aws ec2 associate-route-table --subnet-id $PUB_A --route-table-id $RT_PUBLIC --region $REGION >/dev/null
+aws ec2 associate-route-table --subnet-id $PUB_B --route-table-id $RT_PUBLIC --region $REGION >/dev/null
 
 echo "Criando NAT Gateway..."
+EIP_ALLOC=$(aws ec2 allocate-address --domain vpc --region $REGION --query 'AllocationId' --output text)
 
 NAT_GW_ID=$(aws ec2 create-nat-gateway \
-  --subnet-id $PUBLIC_SUBNET_ID \
+  --subnet-id $PUB_A \
   --allocation-id $EIP_ALLOC \
   --region $REGION \
   --query 'NatGateway.NatGatewayId' \
   --output text)
 
-aws ec2 create-tags --resources $NAT_GW_ID --tags Key=Name,Value=NAT-Gateway --region $REGION
-
-echo "NAT Gateway criado: $NAT_GW_ID"
-
-echo "Aguardando NAT Gateway ficar disponivel..."
-
-aws ec2 wait nat-gateway-available \
-  --nat-gateway-ids $NAT_GW_ID \
-  --region $REGION
-
-echo "NAT Gateway disponivel"
+echo "Aguardando NAT Gateway..."
+aws ec2 wait nat-gateway-available --nat-gateway-ids $NAT_GW_ID --region $REGION
 
 echo "Configurando Route Table privada..."
+RT_PRIVATE=$(aws ec2 create-route-table --vpc-id $VPC_ID --region $REGION --query 'RouteTable.RouteTableId' --output text)
 
-RT_PRIVATE=$(aws ec2 create-route-table \
-  --vpc-id $VPC_ID \
-  --region $REGION \
-  --query 'RouteTable.RouteTableId' \
-  --output text)
+aws ec2 create-route --route-table-id $RT_PRIVATE --destination-cidr-block 0.0.0.0/0 --nat-gateway-id $NAT_GW_ID --region $REGION >/dev/null
 
-aws ec2 create-tags --resources $RT_PRIVATE --tags Key=Name,Value=Private-RouteTable --region $REGION
+aws ec2 associate-route-table --subnet-id $PRIV_A --route-table-id $RT_PRIVATE --region $REGION >/dev/null
+aws ec2 associate-route-table --subnet-id $PRIV_B --route-table-id $RT_PRIVATE --region $REGION >/dev/null
+aws ec2 associate-route-table --subnet-id $DB_SUBNET --route-table-id $RT_PRIVATE --region $REGION >/dev/null
 
-aws ec2 create-route \
-  --route-table-id $RT_PRIVATE \
-  --destination-cidr-block 0.0.0.0/0 \
-  --nat-gateway-id $NAT_GW_ID \
-  --region $REGION >/dev/null
+echo "Criando Security Groups..."
+SG_PUBLIC=$(aws ec2 create-security-group --group-name public-sg --description "public" --vpc-id $VPC_ID --region $REGION --query 'GroupId' --output text)
 
-aws ec2 associate-route-table \
-  --subnet-id $PRIVATE_SUBNET_ID \
-  --route-table-id $RT_PRIVATE \
-  --region $REGION >/dev/null
+aws ec2 authorize-security-group-ingress --group-id $SG_PUBLIC --protocol tcp --port 80 --cidr 0.0.0.0/0 >/dev/null
+aws ec2 authorize-security-group-ingress --group-id $SG_PUBLIC --protocol tcp --port 443 --cidr 0.0.0.0/0 >/dev/null
+aws ec2 authorize-security-group-ingress --group-id $SG_PUBLIC --protocol tcp --port 22 --cidr 0.0.0.0/0 >/dev/null
 
-echo "Route Table privada configurada"
+SG_BACK=$(aws ec2 create-security-group --group-name back-sg --description "backend" --vpc-id $VPC_ID --region $REGION --query 'GroupId' --output text)
 
-echo "Criando Security Group pública..."
+aws ec2 authorize-security-group-ingress --group-id $SG_BACK --protocol tcp --port 80 --source-group $SG_PUBLIC >/dev/null
+aws ec2 authorize-security-group-ingress --group-id $SG_BACK --protocol tcp --port 8080 --source-group $SG_PUBLIC >/dev/null
+aws ec2 authorize-security-group-ingress --group-id $SG_BACK --protocol tcp --port 22 --source-group $SG_PUBLIC >/dev/null
 
-SG_PUBLIC_ID=$(aws ec2 create-security-group \
-  --group-name public-sg \
-  --description "Bastion SG" \
-  --vpc-id $VPC_ID \
-  --region $REGION \
-  --query 'GroupId' \
-  --output text)
+SG_DB=$(aws ec2 create-security-group --group-name db-sg --description "db" --vpc-id $VPC_ID --region $REGION --query 'GroupId' --output text)
 
-aws ec2 create-tags --resources $SG_PUBLIC_ID --tags Key=Name,Value=Bastion-SG --region $REGION
+aws ec2 authorize-security-group-ingress --group-id $SG_DB --protocol tcp --port 3306 --source-group $SG_BACK >/dev/null
 
-echo "Criando as regras de entrada no grupo de segurança..."
-aws ec2 authorize-security-group-ingress \
-      --group-id $SG_PUBLIC_ID \
-      --protocol tcp \
-      --port 80 \
-      --cidr 0.0.0.0/0
+echo "Subindo EC2..."
 
-  aws ec2 authorize-security-group-ingress \
-      --group-id $SG_PUBLIC_ID \
-      --protocol tcp \
-      --port 443 \
-      --cidr 0.0.0.0/0
-
-  aws ec2 authorize-security-group-ingress \
-    --group-id $SG_PUBLIC_ID \
-    --protocol tcp \
-    --port 22 \
-    --cidr 0.0.0.0/0
-
-echo "Security Group púbico criado"
-
-# security group para a instância de backend
-echo "Criando Security group privada para BackEnd..."
-SG_BACKEND_ID=$(aws ec2 create-security-group \
-  --group-name private-backend-sg \
-  --description "private-backend-SG" \
-  --vpc-id $VPC_ID \
-  --region $REGION \
-  --query 'GroupId' \
-  --output text)
-
-aws ec2 create-tags --resources $SG_BACKEND_ID --tags Key=Name,Value=private-backend-SG --region $REGION
-
-echo "Criando as regras de entrada no grupo de segurança..."
-
-  aws ec2 authorize-security-group-ingress \
-      --group-id $SG_BACKEND_ID \
-      --protocol tcp \
-      --port 80 \
-      --source-group $SG_PUBLIC_ID >/dev/null
-
-  aws ec2 authorize-security-group-ingress \
-      --group-id $SG_BACKEND_ID \
-      --protocol tcp \
-      --port 8080 \
-      --source-group $SG_PUBLIC_ID >/dev/null
-
-  aws ec2 authorize-security-group-ingress \
-      --group-id $SG_BACKEND_ID \
-      --protocol tcp \
-      --port 22 \
-      --source-group $SG_PUBLIC_ID
-
-# security group para instância de BD
-SG_DATABASE_ID=$(aws ec2 create-security-group \
-  --group-name private-database-sg \
-  --description "private-database-SG" \
-  --vpc-id $VPC_ID \
-  --region $REGION \
-  --query 'GroupId' \
-  --output text)
-
-aws ec2 create-tags --resources $SG_DATABASE_ID --tags Key=Name,Value=private-database-SG --region $REGION
-
-  aws ec2 authorize-security-group-ingress \
-      --group-id $SG_DATABASE_ID \
-      --protocol tcp \
-      --port 3306 \
-      --source-group $SG_BACKEND_ID
-  
-  aws ec2 authorize-security-group-ingress \
-      --group-id $SG_DATABASE_ID \
-      --protocol tcp \
-      --port 22 \
-      --source-group $SG_BACKEND_ID
-
-
-
-
-echo "Subindo Bastion Host..."
-BASTION_ID=$(aws ec2 run-instances \
+# Bastion (publica)
+BASTION=$(aws ec2 run-instances \
   --image-id $AMI_ID \
-  --count 1 \
   --instance-type $INSTANCE_TYPE \
   --key-name $KEY_NAME \
-  --subnet-id $PUBLIC_SUBNET_ID \
-  --security-group-ids $SG_PUBLIC_ID \
+  --subnet-id $PUB_A \
+  --security-group-ids $SG_PUBLIC \
   --associate-public-ip-address \
+  --private-ip-address 10.0.1.11 \
   --region $REGION \
   --query 'Instances[0].InstanceId' \
   --output text)
 
-aws ec2 create-tags \
-  --resources $BASTION_ID \
-  --tags Key=Name,Value=EC2-Publica \
-  --region $REGION
-
-echo "Bastion Host criado: $BASTION_ID"
-
-echo "Subindo 3 instâncias privadas..."
-
-
-# Subindo instẫncia de Frontend
-echo "Subindo instância do Frontend"
-
-FRONTEND_ID=$(aws ec2 run-instances \
+# PRIVATE A
+APP_A1=$(aws ec2 run-instances \
   --image-id $AMI_ID \
-  --count 1 \
   --instance-type $INSTANCE_TYPE \
   --key-name $KEY_NAME \
-  --subnet-id $PRIVATE_SUBNET_ID \
-  --security-group-ids $SG_BACKEND_ID \
+  --subnet-id $PRIV_A \
+  --security-group-ids $SG_BACK \
+  --private-ip-address 10.0.2.11 \
   --region $REGION \
-  --private-ip-address '10.0.2.100'\
-  --query 'Instances[*].InstanceId' \
+  --query 'Instances[0].InstanceId' \
   --output text)
 
-aws ec2 create-tags \
-    --resources $FRONTEND_ID \
-    --tags Key=Name,Value=EC2-Frontend \
-    --region $REGION
-
-# subindo instância de backend
-echo "Subindo instância do BackEnd"
-BACKEND_ID=$(aws ec2 run-instances \
+APP_A2=$(aws ec2 run-instances \
   --image-id $AMI_ID \
-  --count 1 \
   --instance-type $INSTANCE_TYPE \
   --key-name $KEY_NAME \
-  --subnet-id $PRIVATE_SUBNET_ID \
-  --security-group-ids $SG_BACKEND_ID \
+  --subnet-id $PRIV_A \
+  --security-group-ids $SG_BACK \
+  --private-ip-address 10.0.2.12 \
   --region $REGION \
-  --private-ip-address '10.0.2.200'\
-  --query 'Instances[*].InstanceId' \
+  --query 'Instances[0].InstanceId' \
   --output text)
 
-aws ec2 create-tags \
-    --resources $BACKEND_ID \
-    --tags Key=Name,Value=EC2-BackEnd \
-    --region $REGION
-
-
-# subindo instância do banco de dados
-DATABASE_ID=$(aws ec2 run-instances \
+# PRIVATE B
+APP_B1=$(aws ec2 run-instances \
   --image-id $AMI_ID \
-  --count 1 \
   --instance-type $INSTANCE_TYPE \
   --key-name $KEY_NAME \
-  --subnet-id $PRIVATE_SUBNET_ID \
-  --security-group-ids $SG_DATABASE_ID \
+  --subnet-id $PRIV_B \
+  --security-group-ids $SG_BACK \
+  --private-ip-address 10.0.3.11 \
   --region $REGION \
-  --private-ip-address '10.0.2.80'\
-  --query 'Instances[*].InstanceId' \
+  --query 'Instances[0].InstanceId' \
   --output text)
 
-aws ec2 create-tags \
-  --resources $DATABASE_ID \
-  --tags Key=Name,Value=EC2-Database \
-  --region $REGION
+APP_B2=$(aws ec2 run-instances \
+  --image-id $AMI_ID \
+  --instance-type $INSTANCE_TYPE \
+  --key-name $KEY_NAME \
+  --subnet-id $PRIV_B \
+  --security-group-ids $SG_BACK \
+  --private-ip-address 10.0.3.12 \
+  --region $REGION \
+  --query 'Instances[0].InstanceId' \
+  --output text)
 
+# DB
+DB=$(aws ec2 run-instances \
+  --image-id $AMI_ID \
+  --instance-type $INSTANCE_TYPE \
+  --key-name $KEY_NAME \
+  --subnet-id $DB_SUBNET \
+  --security-group-ids $SG_DB \
+  --private-ip-address 10.0.4.11 \
+  --region $REGION \
+  --query 'Instances[0].InstanceId' \
+  --output text)
 
+echo "Aguardando instâncias..."
+aws ec2 wait instance-running --instance-ids $APP_A1 $APP_A2 $APP_B1 $APP_B2 --region $REGION
 
+echo "Criando ALB..."
+ALB=$(aws elbv2 create-load-balancer \
+  --name alb-lab-$(date +%s) \
+  --subnets $PUB_A $PUB_B \
+  --security-groups $SG_PUBLIC \
+  --region $REGION \
+  --query 'LoadBalancers[0].LoadBalancerArn' \
+  --output text)
 
+TG=$(aws elbv2 create-target-group \
+  --name tg-lab-$(date +%s) \
+  --protocol HTTP \
+  --port 80 \
+  --vpc-id $VPC_ID \
+  --region $REGION \
+  --query 'TargetGroups[0].TargetGroupArn' \
+  --output text)
 
+aws elbv2 register-targets \
+  --target-group-arn $TG \
+  --targets Id=$APP_A1 Id=$APP_A2 Id=$APP_B1 Id=$APP_B2 \
+  --region $REGION >/dev/null
 
+aws elbv2 create-listener \
+  --load-balancer-arn $ALB \
+  --protocol HTTP \
+  --port 80 \
+  --default-actions Type=forward,TargetGroupArn=$TG \
+  --region $REGION >/dev/null
 
+echo "Criando EFS..."
+EFS=$(aws efs create-file-system --region $REGION --query 'FileSystemId' --output text)
 
-echo "Instâncias privadas criadas"
+sleep 20
 
-# 3 EBS para backup
-echo "Criando volumes de backup"
-for i in {1..3}; do
-  VOLUME="Backup-$i"
-  
-  # verifica se volume existe
-  VOLUME_ID=$(aws ec2 describe-volumes \
-    --filters "Name=tag:Name,Values=Backup-1" \
-    --query 'Volumes[0].VolumeId' \
-    --output text)
-
-  # se nao retornar nada, cria os volumes
-  if [ "$EBS" == "None" ] || [ -z "$EBS" ]; then
-    echo "Volume $VOLUME não encontrado. Criando..."
-    EBS=$(aws ec2 create-volume \
-      --volume-type gp3 \
-      --size 10 \
-      --availability-zone ${REGION}a \
-      --query 'VolumeId' \
-      --encrypted \
-      --output text)
-
-    aws ec2 create-tags \
-      --resources $EBS \
-      --tags Key=Name,Value=$VOLUME
-      else
-    echo "Volume $VOLUME já existe (ID: $EBS)."
-  fi
-done
-
-echo "Alocando um volume á instância de banco de dados..."
-aws ec2 wait instance-status-ok \
-  --instance-ids $DATABASE_ID \
-  --region $REGION
-
-aws ec2 attach-volume \
-    --volume-id $VOLUME_ID \
-    --instance-id $DATABASE_ID \
-    --device /dev/sdf
+aws efs create-mount-target --file-system-id $EFS --subnet-id $PRIV_A --security-groups $SG_BACK --region $REGION >/dev/null
+aws efs create-mount-target --file-system-id $EFS --subnet-id $PRIV_B --security-groups $SG_BACK --region $REGION >/dev/null
 
 echo ""
 echo "==============================="
 echo "Infra criada com sucesso"
-echo "1 EC2 Bastion Host (public)"
-echo "3 EC2 (private)"
-echo "NAT Gateway + VPC + Subnets"
+echo "1 Bastion (publica)"
+echo "2 EC2 Private A"
+echo "2 EC2 Private B"
+echo "1 DB"
+echo "ALB + NAT + EFS"
 echo "==============================="
