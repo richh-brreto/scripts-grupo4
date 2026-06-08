@@ -1,0 +1,166 @@
+{
+  "widgets": [
+{
+  "type":"metric",
+  "x":0,
+  "y":0,
+  "width":12,
+  "height":6,
+  "properties":{
+    "title":"CPU i-099435819ccbe7758",
+    "metrics":[
+      ["AWS/EC2","CPUUtilization","InstanceId","i-099435819ccbe7758"]
+    ],
+    "region":"us-east-1",
+    "stat":"Average",
+    "period":300
+  }
+}
+,
+{
+  "type":"metric",
+  "x":12,
+  "y":0,
+  "width":12,
+  "height":6,
+  "properties":{
+    "title":"CPU i-0adbd99f875de3363",
+    "metrics":[
+      ["AWS/EC2","CPUUtilization","InstanceId","i-0adbd99f875de3363"]
+    ],
+    "region":"us-east-1",
+    "stat":"Average",
+    "period":300
+  }
+}
+,
+{
+  "type":"metric",
+  "x":0,
+  "y":6,
+  "width":12,
+  "height":6,
+  "properties":{
+    "title":"CPU i-092e72b082b1eb5e1",
+    "metrics":[
+      ["AWS/EC2","CPUUtilization","InstanceId","i-092e72b082b1eb5e1"]
+    ],
+    "region":"us-east-1",
+    "stat":"Average",
+    "period":300
+  }
+}
+,
+{
+  "type":"metric",
+  "x":12,
+  "y":6,
+  "width":12,
+  "height":6,
+  "properties":{
+    "title":"CPU i-009357bbfb2942303",
+    "metrics":[
+      ["AWS/EC2","CPUUtilization","InstanceId","i-009357bbfb2942303"]
+    ],
+    "region":"us-east-1",
+    "stat":"Average",
+    "period":300
+  }
+}
+,
+{
+  "type":"metric",
+  "x":0,
+  "y":12,
+  "width":12,
+  "height":6,
+  "properties":{
+    "title":"CPU i-0e5459728633f477b",
+    "metrics":[
+      ["AWS/EC2","CPUUtilization","InstanceId","i-0e5459728633f477b"]
+    ],
+    "region":"us-east-1",
+    "stat":"Average",
+    "period":300
+  }
+}
+,
+{
+  "type":"metric",
+  "x":12,
+  "y":12,
+  "width":12,
+  "height":6,
+  "properties":{
+    "title":"CPU i-06625cf5cc5bc73ba",
+    "metrics":[
+      ["AWS/EC2","CPUUtilization","InstanceId","i-06625cf5cc5bc73ba"]
+    ],
+    "region":"us-east-1",
+    "stat":"Average",
+    "period":300
+  }
+}
+,
+{
+  "type":"metric",
+  "x":0,
+  "y":24,
+  "width":12,
+  "height":6,
+  "properties":{
+    "title":"ALB Requests",
+    "metrics":[
+      ["AWS/ApplicationELB","RequestCount","LoadBalancer","app/alb-infra/d9f2be3150bd94d4"]
+    ],
+    "region":"us-east-1",
+    "stat":"Sum"
+  }
+},
+{
+  "type":"metric",
+  "x":12,
+  "y":24,
+  "width":12,
+  "height":6,
+  "properties":{
+    "title":"ALB Latency",
+    "metrics":[
+      ["AWS/ApplicationELB","TargetResponseTime","LoadBalancer","app/alb-infra/d9f2be3150bd94d4"]
+    ],
+    "region":"us-east-1",
+    "stat":"Average"
+  }
+},
+{
+  "type":"metric",
+  "x":0,
+  "y":30,
+  "width":12,
+  "height":6,
+  "properties":{
+    "title":"ALB HTTP 5XX",
+    "metrics":[
+      ["AWS/ApplicationELB","HTTPCode_ELB_5XX_Count","LoadBalancer","app/alb-infra/d9f2be3150bd94d4"]
+    ],
+    "region":"us-east-1",
+    "stat":"Sum"
+  }
+},
+{
+  "type":"metric",
+  "x":12,
+  "y":30,
+  "width":12,
+  "height":6,
+  "properties":{
+    "title":"EFS Throughput",
+    "metrics":[
+      ["AWS/EFS","TotalIOBytes","FileSystemId","fs-0aadfcc6cb0c29403"]
+    ],
+    "region":"us-east-1",
+    "stat":"Sum"
+  }
+}
+]
+}

@@ -1,0 +1,3 @@
+docker service update \
+--image igortrindade13/frontend-grupo4:latest \
+frontend_frontend
