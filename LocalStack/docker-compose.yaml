@@ -1,0 +1,23 @@
+services:
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack-main
+
+    ports:
+      - "4566:4566"
+      - "4510-4559:4510-4559"
+
+    environment:
+      - SERVICES=s3,lambda,ec2,efs,elbv2,cloudcontrol
+      - DEBUG=1
+      - PERSISTENCE=1
+      - LOCALSTACK_APP_INSPECTOR=1 localstack start
+      - LOCALSTACK_API_KEY=ls-fahUdeBi-Cixi-Foda-RUDo-7576haRO42e4
+      - LAMBDA_EXECUTOR=docker
+      - DOCKER_HOST=unix:///var/run/docker.sock
+
+
+    volumes:
+      - ./localstack-data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./infra.sh:/etc/localstack/init/ready.d/infra.sh
