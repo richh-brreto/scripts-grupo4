@@ -1,0 +1,9 @@
+output "alb_dns_name"      { value = aws_lb.this.dns_name }
+output "bastion_public_ip"  { value = aws_instance.bastion.public_ip }
+output "efs_id"              { value = aws_efs_file_system.this.id }
+output "efs_dns_name"         { value = aws_efs_file_system.this.dns_name }
+output "app_a1_private_ip"     { value = aws_instance.app["a1"].private_ip }
+output "app_a2_private_ip"      { value = aws_instance.app["a2"].private_ip }
+output "app_b1_private_ip"       { value = aws_instance.app["b1"].private_ip }
+output "app_b2_private_ip"        { value = aws_instance.app["b2"].private_ip }
+output "db_private_ip"               { value = aws_instance.db.private_ip }
