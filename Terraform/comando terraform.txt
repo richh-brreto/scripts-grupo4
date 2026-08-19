@@ -1,0 +1,9 @@
+terraform init → inicializa e baixa providers
+
+terraform validate → valida sintaxe
+
+terraform plan → mostra plano de mudanças
+
+terraform apply → aplica mudanças
+
+terraform destroy → remove infraestrutura
