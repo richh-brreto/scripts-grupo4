@@ -17,10 +17,10 @@ locals {
   EOT
 
   app_instances = {
-    a1 = { subnet_id = aws_subnet.private_a.id, ip = "10.0.2.11" }
-    a2 = { subnet_id = aws_subnet.private_a.id, ip = "10.0.2.12" }
-    b1 = { subnet_id = aws_subnet.private_b.id, ip = "10.0.3.11" }
-    b2 = { subnet_id = aws_subnet.private_b.id, ip = "10.0.3.12" }
+    a1 = { subnet_id = aws_subnet.private_a.id, ip = "10.0.2.11" } ## front
+    a2 = { subnet_id = aws_subnet.private_a.id, ip = "10.0.2.12" } ## back
+    b1 = { subnet_id = aws_subnet.private_b.id, ip = "10.0.3.11" } ## front 
+    b2 = { subnet_id = aws_subnet.private_b.id, ip = "10.0.3.12" } ## back
   }
 }
 
