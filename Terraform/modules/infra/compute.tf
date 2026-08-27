@@ -17,11 +17,14 @@ locals {
   EOT
 
   app_instances = {
-    a1 = { subnet_id = aws_subnet.private_a.id, ip = "10.0.2.11" } ## front
-    a2 = { subnet_id = aws_subnet.private_a.id, ip = "10.0.2.12" } ## back
-    b1 = { subnet_id = aws_subnet.private_b.id, ip = "10.0.3.11" } ## front 
-    b2 = { subnet_id = aws_subnet.private_b.id, ip = "10.0.3.12" } ## back
-  }
+  a1 = { subnet_id = aws_subnet.private_a.id, ip = "10.0.2.11", tag = "front" }
+  a2 = { subnet_id = aws_subnet.private_a.id, ip = "10.0.2.12", tag = "back" }
+  b1 = { subnet_id = aws_subnet.private_b.id, ip = "10.0.3.11", tag = "front" }
+  b2 = { subnet_id = aws_subnet.private_b.id, ip = "10.0.3.12", tag = "back" }
+}
+
+  front_instances = { for k, v in local.app_instances : k => v if v.tag == "front" }
+  back_instances  = { for k, v in local.app_instances : k => v if v.tag == "back" }
 }
 
 resource "aws_instance" "bastion" {
@@ -33,19 +36,31 @@ resource "aws_instance" "bastion" {
   associate_public_ip_address = true
   private_ip                  = "10.0.1.11"
   user_data_base64            = base64encode(local.user_data)
-  tags = { Name = "${var.project_name}-bastion" }
+  tags                        = { Name = "${var.project_name}-bastion" }
 }
 
-resource "aws_instance" "app" {
-  for_each                = local.app_instances
+resource "aws_instance" "front" {
+  for_each                = local.front_instances
   ami                      = data.aws_ami.ubuntu.id
   instance_type            = var.instance_type
   key_name                 = var.key_name
   subnet_id                = each.value.subnet_id
   vpc_security_group_ids   = [aws_security_group.backend.id]
   private_ip               = each.value.ip
-  user_data_base64          = base64encode(local.user_data)
-  tags = { Name = "${var.project_name}-app-${each.key}" }
+  user_data_base64         = base64encode(local.user_data)
+  tags                     = { Name = "${var.project_name}-app-${each.key}" }
+}
+
+resource "aws_instance" "back" {
+  for_each                = local.back_instances
+  ami                      = data.aws_ami.ubuntu.id
+  instance_type            = var.instance_type
+  key_name                 = var.key_name
+  subnet_id                = each.value.subnet_id
+  vpc_security_group_ids   = [aws_security_group.backend.id]
+  private_ip               = each.value.ip
+  user_data_base64         = base64encode(local.user_data)
+  tags                     = { Name = "${var.project_name}-app-${each.key}" }
 }
 
 resource "aws_instance" "db" {
@@ -55,6 +70,6 @@ resource "aws_instance" "db" {
   subnet_id               = aws_subnet.db.id
   vpc_security_group_ids  = [aws_security_group.db.id]
   private_ip              = "10.0.4.11"
-  user_data_base64         = base64encode(local.user_data)
-  tags = { Name = "${var.project_name}-db" }
+  user_data_base64        = base64encode(local.user_data)
+  tags                    = { Name = "${var.project_name}-db" }
 }

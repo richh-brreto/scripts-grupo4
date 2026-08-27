@@ -1,0 +1,35 @@
+
+**/.terraform/*
+
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Arquivos de crash log
+crash.log
+crash.*.log
+
+# Arquivos de variáveis — geralmente contêm segredos/credenciais
+*.tfvars
+*.tfvars.json
+*.tfvars.txt
+
+*.tfplan
+*.plan
+.terraform/
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+.aws/
+*.pem
+*.ppk
+credentials
+config
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
