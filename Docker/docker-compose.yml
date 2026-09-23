@@ -1,0 +1,50 @@
+services:
+  mysql:
+    image: igortrindade13/banco-g4:latest
+    container_name: boost-db
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    volumes:
+      - boost_data:/var/lib/mysql
+    networks:
+      - grupo4-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 1
+
+  backend:
+    image: igortrindade13/backend-g4:1
+    container_name: backend-grupo4
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/boost
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: root
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - grupo4-net
+
+  frontend:
+    image: igortrindade13/frontend-g4:latest
+    container_name: frontend-g4
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - grupo4-net
+
+networks:
+  grupo4-net:
+    driver: bridge
+
+volumes:
+  boost_data:

@@ -375,4 +375,51 @@ aws elbv2 create-listener \
   --default-actions Type=forward,TargetGroupArn=$TG_ARN \
   --region $REGION >/dev/null
 
-echo "Infraestrutura provisionada com sucesso."
+# ==========================================
+# 8. CONFIGURAR SSH NA BASTION
+# ==========================================
+echo "Aguardando todas as instancias ficarem prontas..."
+aws ec2 wait instance-running \
+  --instance-ids $BASTION $APP_A1 $APP_A2 $APP_B1 $APP_B2 $DB_INST \
+  --region $REGION
+
+echo "Copiando chave SSH para a Bastion..."
+BASTION_PUBLIC_IP=$(aws ec2 describe-instances \
+  --instance-ids $BASTION \
+  --region $REGION \
+  --query 'Reservations[0].Instances[0].PublicIpAddress' \
+  --output text)
+
+while true; do
+  scp -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+    -i key-server.pem key-server.pem ubuntu@${BASTION_PUBLIC_IP}:/tmp/key-server.pem 2>/dev/null && break
+  echo "Aguardando SSH na Bastion ficar disponivel..."
+  sleep 10
+done
+
+ssh -o StrictHostKeyChecking=no -i key-server.pem ubuntu@${BASTION_PUBLIC_IP} \
+  "chmod 600 /tmp/key-server.pem && mkdir -p ~/.ssh && cp /tmp/key-server.pem ~/.ssh/key-server.pem"
+
+echo ""
+echo "========================================="
+echo " Infraestrutura provisionada com sucesso!"
+echo "========================================="
+echo ""
+echo "IPs (fixos):"
+echo "  Bastion (publico):  $BASTION_PUBLIC_IP"
+echo "  App A1 (privado):   10.0.2.11"
+echo "  App A2 (privado):   10.0.2.12"
+echo "  App B1 (privado):   10.0.3.11"
+echo "  App B2 (privado):   10.0.3.12"
+echo "  DB    (privado):    10.0.4.11"
+echo ""
+echo "Conexao SSH via Bastion (use key-server.pem):"
+echo "  ./connect.sh app-a1"
+echo "  ./connect.sh app-a2"
+echo "  ./connect.sh app-b1"
+echo "  ./connect.sh app-b2"
+echo "  ./connect.sh db"
+echo ""
+echo "Ou manualmente:"
+echo "  ssh -J ubuntu@$BASTION_PUBLIC_IP -i key-server.pem ubuntu@10.0.2.11"
+echo ""

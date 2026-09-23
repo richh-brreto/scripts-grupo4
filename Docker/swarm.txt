@@ -1,0 +1,18 @@
+sudo docker service create \
+  --name backend \
+  --replicas 3 \
+  -p 8080:8080 \
+  igortrindade13/backend-g4
+
+
+docker run -d --name backend-g4 -p 8080:8080 igortrindade13/backend-g4
+
+curl -X POST http://localhost:8080/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@sptech.school",
+    "senha": "admin123"
+  }'
+
+
+  sudo docker run -d --name frontend-g4 -p 80:80 igortrindade13/frontend-g4-3.12
