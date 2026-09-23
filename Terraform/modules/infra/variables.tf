@@ -60,7 +60,7 @@ variable "db_subnet_cidr" {
 variable "instance_type" {
   description = "Tipo de instância EC2 usado em todas as instâncias"
   type        = string
-  default     = "t2.micro"
+  default     = "t3.small"
 }
 
 variable "key_name" {
