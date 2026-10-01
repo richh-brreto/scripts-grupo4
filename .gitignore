@@ -1,2 +1,4 @@
 key-server.pem
 Terraform/infra/terraform.tfvars
+AGENTS.md
+terraform.tfstate

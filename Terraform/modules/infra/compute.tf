@@ -1,12 +1,3 @@
-data "aws_ami" "ubuntu" {
-  most_recent = true
-  owners      = ["099720109477"]
-  filter {
-    name   = "name"
-    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
-  }
-}
-
 locals {
   user_data = <<-EOT
     #!/bin/bash
@@ -28,7 +19,7 @@ locals {
 }
 
 resource "aws_instance" "bastion" {
-  ami                         = data.aws_ami.ubuntu.id
+  ami                         = "ami-015a6c48f3dcacc4c"
   instance_type               = var.instance_type
   key_name                    = var.key_name
   subnet_id                   = aws_subnet.public_a.id
@@ -41,7 +32,7 @@ resource "aws_instance" "bastion" {
 
 resource "aws_instance" "front" {
   for_each                = local.front_instances
-  ami                      = data.aws_ami.ubuntu.id
+  ami                      = "ami-015a6c48f3dcacc4c"
   instance_type            = var.instance_type
   key_name                 = var.key_name
   subnet_id                = each.value.subnet_id
@@ -53,7 +44,7 @@ resource "aws_instance" "front" {
 
 resource "aws_instance" "back" {
   for_each                = local.back_instances
-  ami                      = data.aws_ami.ubuntu.id
+  ami                      = "ami-015a6c48f3dcacc4c"
   instance_type            = var.instance_type
   key_name                 = var.key_name
   subnet_id                = each.value.subnet_id
@@ -64,7 +55,7 @@ resource "aws_instance" "back" {
 }
 
 resource "aws_instance" "db" {
-  ami                     = data.aws_ami.ubuntu.id
+  ami                     = "ami-04ce0b8cd62d1d7f6"
   instance_type           = var.instance_type
   key_name                = var.key_name
   subnet_id               = aws_subnet.db.id
