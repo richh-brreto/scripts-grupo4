@@ -66,7 +66,7 @@ variable "instance_type" {
 variable "key_name" {
   description = "Nome do key pair já existente na AWS, usado para acesso SSH"
   type        = string
-  default     = "key-server"
+  default     = "key-server2"
 }
 
 variable "aws_access_key" {
