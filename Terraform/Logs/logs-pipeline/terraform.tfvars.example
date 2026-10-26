@@ -1,0 +1,8 @@
+# Copie para terraform.tfvars (já está no .gitignore) e preencha só os buckets.
+# As credenciais NÃO vão aqui: vêm das variáveis TF_VAR_aws_* (ver README).
+# Um terraform.tfvars com credenciais tem prioridade sobre o ambiente e pode
+# usar chaves vencidas sem você perceber.
+bronze_bucket     = "infra-lab-bronze-dev"
+silver_bucket     = "infra-lab-silver-dev"
+gold_bucket       = "infra-lab-gold-dev"
+agendamento_ativo = true

@@ -5,7 +5,8 @@ locals {
 resource "aws_s3_bucket" "medallion" {
   for_each = toset(local.medallion_layers)
 
-  bucket = "${var.project_name}-${each.key}-${var.environment}"
+  # nomes de bucket S3 só aceitam minúsculas
+  bucket = "${lower(var.project_name)}-${each.key}-${var.environment}"
 
   tags = {
     Layer       = each.key

@@ -1,0 +1,5 @@
+# Copie para terraform.tfvars e preencha só os nomes dos buckets.
+# As credenciais do Learner Lab entram pelas variáveis de ambiente TF_VAR_aws_*.
+bronze_bucket = "nome-do-bucket-bronze"
+silver_bucket = "nome-do-bucket-silver"
+gold_bucket   = "nome-do-bucket-gold"

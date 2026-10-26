@@ -1,0 +1,6 @@
+# Gerado pelo install-fluent-bit.sh em /etc/fluent-bit/boost-env.conf
+@SET NODE_NAME=boost-app-a1
+@SET NODE_ROLE=front
+@SET BRONZE_BUCKET=infra-lab-bronze-dev
+@SET AWS_REGION=us-east-1
+@SET AMBIENTE=dev

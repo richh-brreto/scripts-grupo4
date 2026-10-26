@@ -2,3 +2,7 @@ key-server.pem
 Terraform/infra/terraform.tfvars
 AGENTS.md
 terraform.tfstate
+
+# Diagramas vão para o Trello, não para o repositório
+Diagramas/
+*.svg
