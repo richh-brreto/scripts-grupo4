@@ -16,3 +16,8 @@ output "consultas_salvas" {
     [for q in aws_athena_named_query.consultas : q.name],
   ))
 }
+
+output "lambda_ingestao_url" {
+  description = "URL para enviar as partes: POST <url>?filename=combinadaYYYY-MM/<parte>.csv"
+  value       = aws_lambda_function_url.ingestao.function_url
+}

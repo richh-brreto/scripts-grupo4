@@ -63,3 +63,21 @@ variable "aws_session_token" {
   sensitive = true
   default   = ""
 }
+
+variable "lambda_function_name" {
+  description = "Nome da Lambda de ingestão (para assumir uma função já existente, use o nome dela e faça terraform import)"
+  type        = string
+  default     = "boost-anac-ingestao"
+}
+
+variable "lambda_role_name" {
+  description = "Role usada pela Lambda (no AWS Academy só existe a LabRole)"
+  type        = string
+  default     = "LabRole"
+}
+
+variable "lambda_source_dir" {
+  description = "Pasta local com o lambda_function.py"
+  type        = string
+  default     = "../code/Lambda"
+}
