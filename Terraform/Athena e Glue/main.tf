@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.3"
+  required_version = ">= 1.5"
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -8,142 +8,330 @@ terraform {
   }
 }
 
+############################################
+# Variáveis
+############################################
+variable "region" {
+  type    = string
+  default = "us-east-1"
+}
+
+variable "bronze_bucket" {
+  description = "Bucket já existente para onde o Fluent Bit envia os logs"
+  type        = string
+  default     = "infra-lab-bronze-dev"
+}
+
+variable "logs_prefix" {
+  type    = string
+  default = "logs"
+}
+
+variable "database_name" {
+  type    = string
+  default = "infra_lab_logs"
+}
+
+variable "crawler_schedule" {
+  description = "Cron do crawler (UTC). Vazio = só manual."
+  type        = string
+  default     = "cron(0 3 * * ? *)"
+}
+
 provider "aws" {
   region = var.region
 }
 
+data "aws_caller_identity" "current" {}
+
+############################################
+# Resultados do Athena: usa o bucket bronze (prefixo athena-results/)
+# Learner Lab bloqueia a criação de buckets via Terraform (SCP)
+############################################
 locals {
-  bucket_arn = "arn:aws:s3:::${var.bronze_bucket}"
+  athena_results_bucket = var.bronze_bucket
 }
 
-############################
-# Instancias ja existentes (criadas por outro Terraform)
-# Localiza pelos IPs privados e coloca a tag usada pelo SSM
-############################
-data "aws_instances" "alvo" {
-  filter {
-    name   = "private-ip-address"
-    values = var.instance_ips
-  }
-  instance_state_names = ["running"]
-}
-
-resource "aws_ec2_tag" "fluentbit" {
-  for_each    = toset(data.aws_instances.alvo.ids)
-  resource_id = each.value
-  key         = var.fluentbit_tag_key
-  value       = var.fluentbit_tag_value
-}
-
-############################
-# IAM - Learner Lab: IAM bloqueado, usa a LabRole ja existente
-# (ela ja tem acesso a S3, Glue, Athena e SSM)
-############################
-data "aws_iam_role" "lab" {
-  name = var.lab_role_name
-}
-
-############################
-# Glue
-############################
+############################################
+# Glue Database
+############################################
 resource "aws_glue_catalog_database" "logs" {
-  name = var.glue_database
+  name = var.database_name
 }
 
-resource "aws_glue_crawler" "logs" {
-  name          = "logs-bronze-${var.environment}"
+############################################
+# Tabela com Partition Projection (funciona sem crawler)
+############################################
+resource "aws_glue_catalog_table" "logs_raw" {
+  name          = "logs_raw"
   database_name = aws_glue_catalog_database.logs.name
+  table_type    = "EXTERNAL_TABLE"
+
+  parameters = {
+    classification                  = "json"
+    compressionType                 = "gzip"
+    "projection.enabled"            = "true"
+    "projection.year.type"          = "integer"
+    "projection.year.range"         = "2024,2035"
+    "projection.month.type"         = "integer"
+    "projection.month.range"        = "1,12"
+    "projection.month.digits"       = "2"
+    "projection.day.type"           = "integer"
+    "projection.day.range"          = "1,31"
+    "projection.day.digits"         = "2"
+    "projection.hour.type"          = "integer"
+    "projection.hour.range"         = "0,23"
+    "projection.hour.digits"        = "2"
+    "storage.location.template"     = "s3://${var.bronze_bucket}/${var.logs_prefix}/year=$${year}/month=$${month}/day=$${day}/hour=$${hour}/"
+  }
+
+  partition_keys {
+    name = "year"
+    type = "int"
+  }
+  partition_keys {
+    name = "month"
+    type = "int"
+  }
+  partition_keys {
+    name = "day"
+    type = "int"
+  }
+  partition_keys {
+    name = "hour"
+    type = "int"
+  }
+
+  storage_descriptor {
+    location      = "s3://${var.bronze_bucket}/${var.logs_prefix}/"
+    input_format  = "org.apache.hadoop.mapred.TextInputFormat"
+    output_format = "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat"
+
+    ser_de_info {
+      serialization_library = "org.openx.data.jsonserde.JsonSerDe"
+      parameters = {
+        "ignore.malformed.json" = "true"
+      }
+    }
+
+    # Campos gerados pelo Fluent Bit (tail sem parser + record_modifier)
+    columns {
+      name = "date"
+      type = "string"
+    }
+    columns {
+      name = "log"
+      type = "string"
+    }
+    columns {
+      name = "host"
+      type = "string"
+    }
+    # Só vem preenchido se você adicionar "Path_Key file" no [INPUT] tail
+    columns {
+      name = "file"
+      type = "string"
+    }
+  }
+}
+
+############################################
+# Learner Lab: não dá para criar IAM, usa a LabRole que já existe
+############################################
+data "aws_iam_role" "lab" {
+  name = "LabRole"
+}
+
+############################################
+# Glue Crawler (cria a tabela "logs" a partir do S3)
+############################################
+resource "aws_glue_crawler" "logs" {
+  name          = "infra-lab-logs-crawler"
   role          = data.aws_iam_role.lab.arn
-  schedule      = var.crawler_schedule
+  database_name = aws_glue_catalog_database.logs.name
+  schedule      = var.crawler_schedule == "" ? null : var.crawler_schedule
 
   s3_target {
-    path = "s3://${var.bronze_bucket}/logs/"
+    path = "s3://${var.bronze_bucket}/${var.logs_prefix}/"
   }
 
   schema_change_policy {
     delete_behavior = "LOG"
     update_behavior = "UPDATE_IN_DATABASE"
   }
+
+  configuration = jsonencode({
+    Version = 1.0
+    Grouping = {
+      TableGroupingPolicy = "CombineCompatibleSchemas"
+    }
+    CrawlerOutput = {
+      Partitions = { AddOrUpdateBehavior = "InheritFromTable" }
+    }
+  })
 }
 
-############################
-# Athena
-############################
-# Bucket de resultados do Athena: criado fora do Terraform (CLI), porque a SCP
-# do Learner Lab bloqueia s3:GetBucketObjectLockConfiguration, lido pelo provider.
-# aws s3 mb s3://infra-lab-athena-results-dev --region us-east-1
-
+############################################
+# Athena Workgroup
+############################################
 resource "aws_athena_workgroup" "logs" {
-  name = "logs-${var.environment}"
+  name          = "infra-lab-logs"
+  force_destroy = true
 
   configuration {
-    enforce_workgroup_configuration = true
+    enforce_workgroup_configuration    = true
+    publish_cloudwatch_metrics_enabled = true
+    bytes_scanned_cutoff_per_query     = 10737418240 # 10 GB por query
+
+    engine_version {
+      selected_engine_version = "Athena engine version 3"
+    }
+
     result_configuration {
-      output_location = "s3://${var.athena_results_bucket}/results/"
+      output_location = "s3://${local.athena_results_bucket}/athena-results/"
+      encryption_configuration {
+        encryption_option = "SSE_S3"
+      }
     }
   }
 }
 
-############################
-# Fluent Bit via SSM (instancias com a tag)
-############################
-resource "aws_ssm_document" "fluentbit" {
-  name            = "install-fluentbit-${var.environment}"
-  document_type   = "Command"
-  document_format = "JSON"
-
-  content = jsonencode({
-    schemaVersion = "2.2"
-    description   = "Instala e configura o Fluent Bit"
-    mainSteps = [{
-      action = "aws:runShellScript"
-      name   = "install"
-      inputs = {
-        runCommand = [
-          "if ! command -v fluent-bit >/dev/null 2>&1 && [ ! -x /opt/fluent-bit/bin/fluent-bit ]; then curl -s https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh; fi",
-          "mkdir -p /var/lib/fluent-bit/s3 /etc/fluent-bit",
-          "cat > /etc/fluent-bit/fluent-bit.conf <<'FBEOF'",
-          templatefile("${path.module}/fluent-bit.conf.tpl", {
-            bucket   = var.bronze_bucket
-            region   = var.region
-            log_path = var.log_path
-          }),
-          "FBEOF",
-          "systemctl enable fluent-bit",
-          "systemctl restart fluent-bit"
-        ]
-      }
-    }]
-  })
+############################################
+# Named Queries (SELECTs prontos)
+############################################
+locals {
+  db = aws_glue_catalog_database.logs.name
 }
 
-resource "aws_ssm_association" "fluentbit" {
-  name                = aws_ssm_document.fluentbit.name
-  schedule_expression = "rate(30 minutes)"
-
-  targets {
-    key    = "tag:${var.fluentbit_tag_key}"
-    values = [var.fluentbit_tag_value]
-  }
-
-  depends_on = [aws_ec2_tag.fluentbit]
+resource "aws_athena_named_query" "ultimos_logs" {
+  name      = "01-ultimos-100-logs-hoje"
+  workgroup = aws_athena_workgroup.logs.id
+  database  = local.db
+  query     = <<-SQL
+    SELECT from_iso8601_timestamp("date") AS ts, host, log
+    FROM ${local.db}.logs_raw
+    WHERE year  = year(current_date)
+      AND month = month(current_date)
+      AND day   = day(current_date)
+    ORDER BY ts DESC
+    LIMIT 100;
+  SQL
 }
 
-############################
+resource "aws_athena_named_query" "erros_ultima_hora" {
+  name      = "02-erros-ultimas-24h"
+  workgroup = aws_athena_workgroup.logs.id
+  database  = local.db
+  query     = <<-SQL
+    SELECT from_iso8601_timestamp("date") AS ts, host, log
+    FROM ${local.db}.logs_raw
+    WHERE from_iso8601_timestamp("date") > current_timestamp - interval '24' hour
+      AND year  >= year(current_date - interval '1' day)
+      AND (lower(log) LIKE '%error%'
+        OR lower(log) LIKE '%exception%'
+        OR lower(log) LIKE '%fatal%'
+        OR lower(log) LIKE '%panic%')
+    ORDER BY ts DESC
+    LIMIT 500;
+  SQL
+}
+
+resource "aws_athena_named_query" "ssh_falhas" {
+  name      = "03-ssh-tentativas-falhas-por-host"
+  workgroup = aws_athena_workgroup.logs.id
+  database  = local.db
+  query     = <<-SQL
+    SELECT host,
+           regexp_extract(log, 'from ([0-9.]+)', 1) AS ip_origem,
+           count(*) AS tentativas
+    FROM ${local.db}.logs_raw
+    WHERE year = year(current_date) AND month = month(current_date)
+      AND (log LIKE '%Failed password%' OR log LIKE '%Invalid user%')
+    GROUP BY 1, 2
+    ORDER BY tentativas DESC
+    LIMIT 50;
+  SQL
+}
+
+resource "aws_athena_named_query" "volume_por_host" {
+  name      = "04-volume-de-logs-por-host-e-hora"
+  workgroup = aws_athena_workgroup.logs.id
+  database  = local.db
+  query     = <<-SQL
+    SELECT host, year, month, day, hour, count(*) AS linhas
+    FROM ${local.db}.logs_raw
+    WHERE year = year(current_date) AND month = month(current_date)
+    GROUP BY 1, 2, 3, 4, 5
+    ORDER BY year DESC, month DESC, day DESC, hour DESC, linhas DESC;
+  SQL
+}
+
+resource "aws_athena_named_query" "docker_stderr" {
+  name      = "05-docker-containers-stderr"
+  workgroup = aws_athena_workgroup.logs.id
+  database  = local.db
+  query     = <<-SQL
+    SELECT from_iso8601_timestamp("date") AS ts,
+           host,
+           json_extract_scalar(log, '$.log') AS mensagem
+    FROM ${local.db}.logs_raw
+    WHERE year = year(current_date) AND month = month(current_date)
+      AND log LIKE '{"log":%'
+      AND json_extract_scalar(log, '$.stream') = 'stderr'
+    ORDER BY ts DESC
+    LIMIT 200;
+  SQL
+}
+
+resource "aws_athena_named_query" "cloud_init" {
+  name      = "06-cloud-init-output"
+  workgroup = aws_athena_workgroup.logs.id
+  database  = local.db
+  query     = <<-SQL
+    SELECT from_iso8601_timestamp("date") AS ts, host, log
+    FROM ${local.db}.logs_raw
+    WHERE year = year(current_date) AND month = month(current_date)
+      AND (log LIKE '%cloud-init%' OR log LIKE 'Cloud-init%')
+    ORDER BY ts DESC
+    LIMIT 200;
+  SQL
+}
+
+resource "aws_athena_named_query" "busca_texto" {
+  name      = "07-busca-por-texto-e-host"
+  workgroup = aws_athena_workgroup.logs.id
+  database  = local.db
+  query     = <<-SQL
+    -- Troque o host e o texto; sempre filtre por partição (year/month/day) para reduzir custo
+    SELECT from_iso8601_timestamp("date") AS ts, host, log
+    FROM ${local.db}.logs_raw
+    WHERE year = 2026 AND month = 10 AND day = 28
+      AND host = 'COLOQUE_O_HOSTNAME'
+      AND log LIKE '%COLOQUE_O_TEXTO%'
+    ORDER BY ts DESC
+    LIMIT 200;
+  SQL
+}
+
+############################################
 # Outputs
-############################
-output "instancias_marcadas" {
-  value = data.aws_instances.alvo.ids
+############################################
+output "athena_workgroup" {
+  value = aws_athena_workgroup.logs.name
 }
 
 output "glue_database" {
   value = aws_glue_catalog_database.logs.name
 }
 
-output "glue_crawler" {
+output "crawler_name" {
   value = aws_glue_crawler.logs.name
 }
 
-output "athena_workgroup" {
-  value = aws_athena_workgroup.logs.name
+output "athena_results_bucket" {
+  value = "${local.athena_results_bucket}/athena-results/"
+}
+
+output "start_crawler_cmd" {
+  value = "aws glue start-crawler --name ${aws_glue_crawler.logs.name} --region ${var.region}"
 }
