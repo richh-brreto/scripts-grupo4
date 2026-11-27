@@ -1,0 +1,105 @@
+services:
+  frontend:
+    image: rafael244/frontend:1.0.2
+    ports:
+      - "80:80"
+    networks:
+      - app-net
+    restart: on-failure
+
+  api:
+    image: rafael244/backend:1.0.2
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://host.docker.internal:3306/${DB_NAME:-boost}?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
+      DB_USER: ${DB_USER:-root}
+      DB_PASS: ${DB_PASSWORD:?Preencha DB_PASSWORD no .env}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-boost}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-boost}
+      JWT_SECRET: ${JWT_SECRET:?Preencha JWT_SECRET no .env}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-36000000}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash-lite}
+    networks:
+      - app-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: on-failure
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    hostname: "rabbitmq-local"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-boost}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-boost}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./conf/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./conf/definitions.json:/etc/rabbitmq/definitions.json:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - app-net
+    restart: always
+
+  mensageria:
+    image: rafael244/mensageria:1.0.3
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "8081:8080"
+    env_file:
+      - .env
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-boost}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-boost}
+      WHAPI_AUTHORIZATION: ${WHAPI_AUTHORIZATION:-}
+    networks:
+      - app-net
+    restart: always
+
+  grafana:
+    image: grafana/grafana:latest-ubuntu
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Preencha GRAFANA_ADMIN_PASSWORD no .env}
+      GRAFANA_DB_USER: ${GRAFANA_DB_USER:-grafana}
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?Preencha GRAFANA_DB_PASSWORD no .env}
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: motherduck-duckdb-datasource
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/painel-cliente-tecnico.json
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./plugins:/var/lib/grafana/plugins
+      - ./provisioning:/etc/grafana/provisioning
+      - ./gold:/gold:ro
+    networks:
+      - app-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: on-failure
+
+networks:
+  app-net:
+    driver: bridge
+
+volumes:
+  rabbitmq-data:
+  grafana-data:

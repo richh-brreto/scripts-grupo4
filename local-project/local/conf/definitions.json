@@ -1,0 +1,56 @@
+{
+  "rabbit_version": "3.13.0",
+  "users": [
+    {
+      "name": "boost",
+      "password": "boost",
+      "tags": "administrator"
+    }
+  ],
+  "vhosts": [
+    {
+      "name": "/"
+    }
+  ],
+  "permissions": [
+    {
+      "user": "boost",
+      "vhost": "/",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ],
+  "queues": [
+    {
+      "name": "contratos.vencimento.queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "mensageria.aula.dlx"
+      }
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "contratos.exchange",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "bindings": [
+    {
+      "source": "contratos.exchange",
+      "vhost": "/",
+      "destination": "contratos.vencimento.queue",
+      "destination_type": "queue",
+      "routing_key": "contrato.vencimento",
+      "arguments": {}
+    }
+  ]
+}
